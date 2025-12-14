@@ -1,5 +1,5 @@
 import flet as ft
-
+import math
 
 class CalcButton(ft.ElevatedButton):
     def __init__(self, text, button_clicked, expand=1):
@@ -140,9 +140,49 @@ class CalculatorApp(ft.Container):
             elif float(self.result.value) < 0:
                 self.result.value = str(self.format_number(abs(float(self.result.value))))
 
+        elif data in ("sin"):
+            self.result.value = self.format_number(math.sin(math.radians(float(self.result.value))))
+            self.new_operand = True
+            
+        elif data in ("cos"):
+            self.result.value = self.format_number(math.cos(math.radians(float(self.result.value))))
+            self.new_operand = True 
+        
+        elif data in ("tan"):
+            self.result.value = self.format_number(math.tan(math.radians(float(self.result.value))))
+            self.new_operand = True
+        
+        elif data in ("√"):
+            if float(self.result.value) < 0:
+                self.result.value = "Error"
+            else:
+                self.result.value = self.format_number(math.sqrt(float(self.result.value)))
+            self.new_operand = True
+            
+        elif data in ("xʸ"):
+            self.operand1 = float(self.result.value)
+            self.operator = "**"
+            self.new_operand = True
+            
+        elif data in ("x²"):
+            self.result.value = self.format_number(float(self.result.value) ** 2)
+            self.new_operand = True
+            
+        elif data in ("|x|"):
+            self.result.value = self.format_number(abs(float(self.result.value)))
+            self.new_operand = True
+            
+        elif data in ("π"):
+            self.result.value = self.format_number(math.pi)
+            self.new_operand = True
+            
+        
+
         self.update()
 
     def format_number(self, num):
+        num = round(num, 10)
+
         if num % 1 == 0:
             return int(num)
         else:
@@ -164,6 +204,11 @@ class CalculatorApp(ft.Container):
                 return "Error"
             else:
                 return self.format_number(operand1 / operand2)
+            
+        elif operator == "**":
+            return self.format_number(operand1 ** operand2)
+        
+        
 
     def reset(self):
         self.operator = "+"
