@@ -5,30 +5,49 @@ class CalcButton(ft.ElevatedButton):
     def __init__(self, text, button_clicked, expand=1):
         super().__init__()
         self.text = text
-        self.expand = expand
         self.on_click = button_clicked
         self.data = text
-
-
+        
+       
+        #まんまる
+        if text == "0":
+            self.width = 110  
+            self.height = 50
+            self.style = ft.ButtonStyle(shape=ft.StadiumBorder(), padding=0)
+            
+        else:
+            self.width = 50
+            self.height = 50
+            self.style = ft.ButtonStyle(shape=ft.CircleBorder(), padding=0)
+        
 class DigitButton(CalcButton):
     def __init__(self, text, button_clicked, expand=1):
         CalcButton.__init__(self, text, button_clicked, expand)
-        self.bgcolor = ft.Colors.WHITE24
-        self.color = ft.Colors.WHITE
-
-
+        self.bgcolor = "#808080"
+    
+        self.content = ft.Text(value=text, size=30, color="#000000")
+        
+        
 class ActionButton(CalcButton):
     def __init__(self, text, button_clicked):
         CalcButton.__init__(self, text, button_clicked)
-        self.bgcolor = ft.Colors.ORANGE
-        self.color = ft.Colors.WHITE
+        self.bgcolor = "#800000"
+        self.color = "#FFFFFF"
+
 
 
 class ExtraActionButton(CalcButton):
     def __init__(self, text, button_clicked):
         CalcButton.__init__(self, text, button_clicked)
-        self.bgcolor = ft.Colors.BLUE_GREY_100
-        self.color = ft.Colors.BLACK
+        self.bgcolor = "#F5E6C4"
+        self.color = "#000000"
+
+        
+class ResetButton(CalcButton):
+    def __init__(self, text, button_clicked):
+        CalcButton.__init__(self, text, button_clicked)
+        self.bgcolor = "#800000"  # 色指定_濃さ・カラーコードでもいい！
+        self.color = "#FFFFFF"  
 
 
 class CalculatorApp(ft.Container):
@@ -36,9 +55,10 @@ class CalculatorApp(ft.Container):
         super().__init__()
         self.reset()
 
-        self.result = ft.Text(value="0", color=ft.Colors.WHITE, size=20)
-        self.width = 350
-        self.bgcolor = ft.Colors.BLACK
+        #画面表示部分
+        self.result = ft.Text(value="0", color="#FFFFFF", size=50)
+        self.width = 270
+        self.bgcolor = "#000000"
         self.border_radius = ft.border_radius.all(20)
         self.padding = 20
         self.content = ft.Column(
@@ -62,10 +82,12 @@ class CalculatorApp(ft.Container):
                 ),
                 ft.Row(
                     controls=[
-                        ExtraActionButton(text="AC", button_clicked=self.button_clicked),
+
                         ExtraActionButton(text="+/-", button_clicked=self.button_clicked),
                         ExtraActionButton(text="%", button_clicked=self.button_clicked),
+                        ResetButton(text="AC", button_clicked=self.button_clicked),
                         ActionButton(text="/", button_clicked=self.button_clicked),
+                        
                     ]
                 ),
                 ft.Row(
