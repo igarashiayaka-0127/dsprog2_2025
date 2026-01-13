@@ -16,7 +16,7 @@ def main(page: ft.Page):
     # ==========================================
     MAP_POSITIONS = {
         # --- 北海道 ---
-        "011000": {"top": 92,  "left": 185, "name": "宗谷"}, 
+        "011000": {"top": 92,  "left": 185, "name": "宗谷"}, # ★ここが正解！
         "012000": {"top": 105, "left": 183, "name": "上川・留萌"},
         "013000": {"top": 106, "left": 196, "name": "網走・北見・紋別"},
         "014030": {"top": 121, "left": 196, "name": "十勝"},
@@ -117,6 +117,7 @@ def main(page: ft.Page):
         return None
 
     def get_forecast_data(target_code, target_name):
+        print(f"👉 天気データ取得: {target_name} ({target_code})")
         url = f"https://www.jma.go.jp/bosai/forecast/data/forecast/{target_code}.json"
         data = fetch_json(url)
         found_mode = False
@@ -215,14 +216,17 @@ def main(page: ft.Page):
             map_stack.controls.append(dot)
 
     def update_map(selected_code):
+        print(f"📍 マップ更新要求: {selected_code}")
         target_code = None
 
         if selected_code in MAP_POSITIONS:
             target_code = selected_code
+            print(f"   -> 直接ヒット！座標: {MAP_POSITIONS[target_code]}")
         else:
             parent = office_to_center.get(selected_code)
             if parent and parent in MAP_POSITIONS:
                 target_code = parent
+                print(f"   -> 親コード({parent})でヒット")
 
         for control in map_stack.controls[1:]:
             if control.data == target_code:
