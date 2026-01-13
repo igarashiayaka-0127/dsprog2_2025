@@ -4,53 +4,43 @@ import datetime
 import os
 
 def main(page: ft.Page):
-    # --- アプリ設定 ---
-    page.title = "天気予報"
+    page.title = "天気予報アプリ"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     page.bgcolor = "#E0E5EC"
-    page.window_width = 1200 
-
+    page.window_width = 2000 
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(script_dir, "weather.db")
 
     if not os.path.exists(db_path):
-        # DBがない場合のエラー表示
-        page.add(ft.Text("エラー: weather.db が見つかりません！\n先に db_import.py を実行してデータを作成してください。", color="red", size=30))
+        page.add(ft.Text("⚠️ エラー: weather.db がありません！db_import.pyを実行してください。", color="red", size=30))
         return
 
-    MAP_POSITIONS = {}
+    current_selected_code = None 
+    current_selected_name = None
     
-    # メニューのグループ分け用に、地域コード順で取得します
+    MAP_POSITIONS = {}
     SORTED_AREAS = [] 
+    AVAILABLE_DATES = []
 
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        
-        # 地域コード順(ORDER BY code)で取得
         cur.execute("SELECT code, name, map_top, map_left FROM areas ORDER BY code")
         rows = cur.fetchall()
-        
         for r in rows:
             code, name, top, left = r
-            # 地図表示用
-            MAP_POSITIONS[code] = {
-                "name": name,
-                "top": top,
-                "left": left
-            }
-            # メニュー表示用リストにも追加
+            MAP_POSITIONS[code] = {"name": name, "top": top, "left": left}
             SORTED_AREAS.append({"code": code, "name": name})
-            
-        conn.close()
 
-        
+        cur.execute("SELECT DISTINCT forecast_date FROM forecasts ORDER BY forecast_date")
+        date_rows = cur.fetchall()
+        AVAILABLE_DATES = [r[0] for r in date_rows]
+        conn.close()
     except Exception as e:
         print(f"DB読み込みエラー: {e}")
 
-    
     def get_weather_icon(weather_text):
         text = weather_text.lower()
         if "晴" in text: return ft.Icons.WB_SUNNY, "orange"
@@ -59,58 +49,51 @@ def main(page: ft.Page):
         elif "くもり" in text or "曇" in text: return ft.Icons.CLOUD, "grey"
         else: return ft.Icons.WB_CLOUDY_OUTLINED, "blueGrey"
 
-    def get_forecast_data(target_code, target_name):
-        
+    def get_forecast_data(target_code, target_name, filter_date):
         try:
             conn = sqlite3.connect(db_path)
             cur = conn.cursor()
-            
-            # forecastsテーブルから検索
-            cur.execute("""
-                SELECT forecast_date, weather 
-                FROM forecasts 
-                WHERE area_code = ?
-                ORDER BY forecast_date
-            """, (target_code,))
-            
+            if filter_date == "すべて" or filter_date is None:
+                sql = "SELECT forecast_date, weather FROM forecasts WHERE area_code = ? ORDER BY forecast_date"
+                params = (target_code,)
+            else:
+                sql = "SELECT forecast_date, weather FROM forecasts WHERE area_code = ? AND forecast_date = ?"
+                params = (target_code, filter_date)
+            cur.execute(sql, params)
             rows = cur.fetchall()
             conn.close()
             
-            if not rows:
-                return "データなし", []
-
+            if not rows: return "データなし", []
             display_list = []
-            
             for r in rows:
                 db_date, weather_text = r
-                
-                # 日付整形
                 try:
                     dt = datetime.datetime.strptime(db_date, "%Y-%m-%d")
-                    date_str = dt.strftime("%m/%d")
-                    w_day = ["月","火","水","木","金","土","日"][dt.weekday()]
-                    date_disp = f"{date_str} ({w_day})"
-                except:
-                    date_disp = db_date
-
-                display_list.append({
-                    "sub_area": target_name,
-                    "date": date_disp,
-                    "weather": weather_text
-                })
-            
+                    date_disp = f"{dt.strftime('%m/%d')} ({['月','火','水','木','金','土','日'][dt.weekday()]})"
+                except: date_disp = db_date
+                display_list.append({"sub_area": target_name, "date": date_disp, "weather": weather_text})
             return target_name, display_list
+        except: return "エラー", []
 
-        except Exception as e:
-            print(f"検索エラー: {e}")
-            return "エラー", []
+    date_options = [ft.dropdown.Option("すべて")] + [ft.dropdown.Option(d) for d in AVAILABLE_DATES]
+    date_dropdown = ft.Dropdown(
+        width=200, options=date_options, value="すべて", label="日付で絞り込み",
+        label_style=ft.TextStyle(color="white"), text_style=ft.TextStyle(color="white"),
+        border_color="white", content_padding=10,
+    )
 
+    def on_date_change(e):
+        selected_date = date_dropdown.value
+        if current_selected_code: on_sidebar_click_logic(current_selected_code, current_selected_name)
+        else: 
+            page.snack_bar = ft.SnackBar(ft.Text(f"日付を「{selected_date}」にしました。"))
+            page.snack_bar.open = True
+            page.update()
+    date_dropdown.on_change = on_date_change
 
-    
     sidebar_content = ft.Column(scroll=ft.ScrollMode.AUTO)
     sidebar_content.controls.append(ft.Container(padding=20, content=ft.Text("地域リスト", color="white", size=20, weight="bold")))
 
-    # --- 地域コードの先頭2桁で地方を判定する関数 ---
     def get_region_group(code):
         prefix = int(code[:2])
         if prefix == 1: return "北海道地方"
@@ -123,61 +106,33 @@ def main(page: ft.Page):
         if 40 <= prefix <= 49: return "九州・沖縄地方"
         return "その他"
 
-    # --- DBのデータを使ってメニューを作成 ---
-    # 1. まずグループごとにリストに分ける
     grouped_areas = {}
-    # グループの表示順序を定義
-    group_order = ["北海道地方", "東北地方", "関東甲信地方", "北陸・東海地方", "近畿地方", "中国地方", "四国地方", "九州・沖縄地方", "その他"]
-    
     for area in SORTED_AREAS:
         group = get_region_group(area["code"])
-        if group not in grouped_areas:
-            grouped_areas[group] = []
+        if group not in grouped_areas: grouped_areas[group] = []
         grouped_areas[group].append(area)
 
-    # 2. グループごとにExpansionTileを作って追加
-    for group_name in group_order:
+    for group_name in ["北海道地方", "東北地方", "関東甲信地方", "北陸・東海地方", "近畿地方", "中国地方", "四国地方", "九州・沖縄地方", "その他"]:
         if group_name in grouped_areas:
-            office_buttons = []
-            for area in grouped_areas[group_name]:
-                office_buttons.append(
-                    ft.ListTile(
-                        title=ft.Text(area["name"], color="white70"),
-                        leading=ft.Icon(ft.Icons.LOCATION_ON, color="white70", size=16),
-                        data={"code": area["code"], "name": area["name"]},
-                        on_click=lambda e: on_sidebar_click(e),
-                        hover_color="white10",
-                    )
-                )
-            
-            sidebar_content.controls.append(
-                ft.ExpansionTile(
-                    title=ft.Text(group_name, color="white", weight="bold"),
-                    controls=office_buttons,
-                    icon_color="white", collapsed_icon_color="white", bgcolor="transparent",
-                )
-            )
+            office_buttons = [
+                ft.ListTile(title=ft.Text(a["name"], color="white70"), leading=ft.Icon(ft.Icons.LOCATION_ON, color="white70", size=16),
+                            data=a, on_click=lambda e: on_sidebar_click_ui(e), hover_color="white10")
+                for a in grouped_areas[group_name]
+            ]
+            sidebar_content.controls.append(ft.ExpansionTile(title=ft.Text(group_name, color="white", weight="bold"), controls=office_buttons, icon_color="white", collapsed_icon_color="white", bgcolor="transparent"))
 
-    # --- その他のUIパーツ ---
     def create_card(info):
         icon, color = get_weather_icon(info['weather'])
         return ft.Container(
             width=180, height=220, bgcolor="white", border_radius=15, padding=15,
             shadow=ft.BoxShadow(spread_radius=1, blur_radius=10, color="black26"),
-            content=ft.Column(
-                controls=[
-                    ft.Text(info['sub_area'], size=13, weight="bold", color="blueGrey700"),
-                    ft.Text(info['date'], size=12, color="grey"),
-                    ft.Divider(height=1, color="grey200"),
-                    ft.Container(
-                        content=ft.Icon(icon, size=48, color=color),
-                        alignment=ft.Alignment(0, 0),
-                        padding=10
-                    ),
-                    ft.Text(info['weather'], size=12, text_align=ft.TextAlign.CENTER, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            )
+            content=ft.Column([
+                ft.Text(info['sub_area'], size=13, weight="bold", color="blueGrey700"),
+                ft.Text(info['date'], size=12, color="grey"),
+                ft.Divider(height=1, color="grey200"),
+                ft.Container(content=ft.Icon(icon, size=48, color=color), alignment=ft.Alignment(0,0), padding=10),
+                ft.Text(info['weather'], size=12, text_align=ft.TextAlign.CENTER, max_lines=2)
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         )
 
     grid_view = ft.Row(wrap=True, spacing=15, run_spacing=15, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -189,78 +144,76 @@ def main(page: ft.Page):
 
     def init_map_ui():
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        img_filename = "日本地図.jpg"
-        img_full_path = os.path.join(script_dir, img_filename)
-
-        if os.path.exists(img_full_path):
-            img_src = img_filename
-        else:
-            img_src = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Japan_regions_map.svg/462px-Japan_regions_map.svg.png"
-
-        map_image = ft.Image(src=img_src, width=MAP_WIDTH, height=MAP_HEIGHT, fit="contain", opacity=0.9)
-        map_stack.controls.append(map_image)
-
+        img_path = os.path.join(script_dir, "日本地図.jpg")
+        img_src = "日本地図.jpg" if os.path.exists(img_path) else "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Japan_regions_map.svg/462px-Japan_regions_map.svg.png"
+        map_stack.controls.append(ft.Image(src=img_src, width=MAP_WIDTH, height=MAP_HEIGHT, fit="contain", opacity=0.9))
         for code, info in MAP_POSITIONS.items():
-            dot = ft.Container(
-                width=8, height=8, bgcolor="red", border_radius=4,
-                left=info["left"], top=info["top"],
-                visible=False, shadow=ft.BoxShadow(blur_radius=3, color="red"),
-                data=code
-            )
-            map_stack.controls.append(dot)
+            map_stack.controls.append(ft.Container(width=8, height=8, bgcolor="red", border_radius=4, left=info["left"], top=info["top"], visible=False, shadow=ft.BoxShadow(blur_radius=3, color="red"), data=code))
 
-    def update_map(selected_code):
-        target_code = None
-        if selected_code in MAP_POSITIONS:
-            target_code = selected_code
-        
-        for control in map_stack.controls[1:]:
-            if control.data == target_code:
-                control.visible = True
-                control.scale = 1.5
-            else:
-                control.visible = False
-                control.scale = 1.0
+    def update_map(target_code):
+        for c in map_stack.controls[1:]:
+            c.visible = (c.data == target_code)
+            c.scale = 1.5 if c.visible else 1.0
         map_stack.update()
 
     def update_view(area_name, forecasts):
         if isinstance(forecasts, tuple): _, data_list = forecasts
         else: data_list = forecasts
-        main_title.value = f"{area_name} の天気"
+        date_info = f" ({date_dropdown.value})" if date_dropdown.value != "すべて" else ""
+        main_title.value = f"{area_name} の天気{date_info}"
         grid_view.controls.clear()
-        if not data_list:
-            grid_view.controls.append(ft.Text("データなし (DBを確認してください)", color="white"))
-        else:
-            for info in data_list:
-                grid_view.controls.append(create_card(info))
+        if not data_list: grid_view.controls.append(ft.Text("データなし", color="white"))
+        else: 
+            for info in data_list: grid_view.controls.append(create_card(info))
         page.update()
 
-    def on_sidebar_click(e):
-        code = e.control.data["code"]
-        name = e.control.data["name"]
+    def on_sidebar_click_logic(code, name):
+        nonlocal current_selected_code, current_selected_name
+        current_selected_code, current_selected_name = code, name
         main_title.value = f"{name} を読込中..."
         page.update()
         update_map(code)
-        forecasts = get_forecast_data(code, name)
-        update_view(name, forecasts)
+        update_view(name, get_forecast_data(code, name, date_dropdown.value))
 
-    # --- 画面構成 ---
+    def on_sidebar_click_ui(e): on_sidebar_click_logic(e.control.data["code"], e.control.data["name"])
+
     init_map_ui()
     
-    sidebar = ft.Container(width=260, bgcolor="#263238", content=sidebar_content)
-    header = ft.Container(
-        height=60, bgcolor="#303F9F", 
-        padding=ft.Padding(left=20, top=0, right=0, bottom=0),
-        content=ft.Row([ft.Icon(ft.Icons.WB_SUNNY, color="white"), ft.Text("日本気象庁 天気予報", color="white", size=20, weight="bold")])
-    )
-    content_area = ft.Row([
-        ft.Container(content=ft.Column([main_title, ft.Divider(color="white54"), grid_view], expand=True), expand=True, padding=30),
-        ft.Container(width=340, padding=20, bgcolor="#455A64", border=ft.Border(left=ft.BorderSide(1, "white24")),
-                     content=ft.Column([ft.Text("現在地", color="white", weight="bold"), map_stack], horizontal_alignment=ft.CrossAxisAlignment.CENTER))
-    ], expand=True, spacing=0)
+
+    content_area = ft.Column([
+       
+        ft.Container(
+            height=250, 
+            width=float("inf"),
+            bgcolor="#455A64",
+            padding=ft.padding.only(top=0, left=20, right=20, bottom=5),
+            alignment=ft.Alignment(0, -1.0), 
+            border=ft.Border(bottom=ft.BorderSide(1, "white24")),
+            
+            content=ft.Column([
+          
+                ft.Container(
+                    content=map_stack,
+                    margin=ft.margin.only(top=-70)
+                )
+            ], 
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.START, 
+            spacing=0 
+            )
+        ),
     
-    main_area = ft.Container(expand=True, bgcolor="#546E7A", content=content_area)
-    page.add(header, ft.Row([sidebar, main_area], expand=True, spacing=0))
+        ft.Container(
+            expand=True, padding=30,
+            content=ft.Column([main_title, ft.Divider(color="white54"), grid_view], expand=True)
+        )
+    ], spacing=0, expand=True)
+    
+    page.add(
+        ft.Container(height=70, bgcolor="#303F9F", padding=ft.Padding(left=20,right=20), 
+                     content=ft.Row([ft.Row([ft.Icon(ft.Icons.WB_SUNNY, color="white"), ft.Text("過去天気アーカイブ", color="white", size=20, weight="bold")]), date_dropdown], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)),
+        ft.Row([ft.Container(width=210, bgcolor="#263238", content=sidebar_content), ft.Container(expand=True, bgcolor="#546E7A", content=content_area)], expand=True, spacing=0)
+    )
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 ft.app(target=main, assets_dir=script_dir)
