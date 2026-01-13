@@ -1,11 +1,10 @@
 import flet as ft
 import requests
 import datetime
-import traceback
 import os
 
 def main(page: ft.Page):
-    # --- アプリの基本設定 ---
+    # --- アプリ設定 ---
     page.title = "天気予報アプリ"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
@@ -13,11 +12,11 @@ def main(page: ft.Page):
     page.window_width = 1200 
 
     # ==========================================
-    # 0. 地図の位置設定 (全国完全対応版)
+    # 0. 地図座標データ
     # ==========================================
     MAP_POSITIONS = {
         # --- 北海道 ---
-        "011000": {"top": 91,  "left": 184, "name": "宗谷"},
+        "011000": {"top": 92,  "left": 185, "name": "宗谷"}, 
         "012000": {"top": 105, "left": 183, "name": "上川・留萌"},
         "013000": {"top": 106, "left": 196, "name": "網走・北見・紋別"},
         "014030": {"top": 121, "left": 196, "name": "十勝"},
@@ -71,8 +70,8 @@ def main(page: ft.Page):
         "350000": {"top": 250, "left": 63,  "name": "山口"},
 
         # --- 四国 ---
-        "360000": {"top": 255, "left": 95,  "name": "徳島"},
-        "370000": {"top": 250, "left": 88,  "name": "香川"},
+        "360000": {"top": 255, "left": 95,  "name": "徳島"}, 
+        "370000": {"top": 250, "left": 88,  "name": "香川"}, 
         "380000": {"top": 259, "left": 76,  "name": "愛媛"},
         "390000": {"top": 263, "left": 84,  "name": "高知"},
 
@@ -92,30 +91,16 @@ def main(page: ft.Page):
         "473000": {"top": 279, "left": 229, "name": "宮古島"},
         "474000": {"top": 286, "left": 221, "name": "八重山"},
         
-        # 予備の地方全体コード（県データがない場合の保険）
-        "010100": {"top": 56,  "left": 245, "name": "北海道"},
-        "010200": {"top": 120, "left": 215, "name": "東北"},
-        "010300": {"top": 200, "left": 200, "name": "関東甲信"},
-        "010400": {"top": 210, "left": 165, "name": "東海"},
-        "010500": {"top": 170, "left": 160, "name": "北陸"},
-        "010600": {"top": 220, "left": 135, "name": "近畿"},
-        "010700": {"top": 210, "left": 80,  "name": "中国"},
-        "010800": {"top": 250, "left": 90,  "name": "四国"},
-        "010900": {"top": 230, "left": 40,  "name": "九州北部"},
-        "011000": {"top": 280, "left": 40,  "name": "九州南部"},
-        "011100": {"top": 330, "left": 10,  "name": "沖縄"},
+        # ★【重要】重複していた「予備コード」はすべて削除しました！
     }
-
-    # ==========================================
-    # 設定データ
-    # ==========================================
-    REDIRECT_MAP = {"014030": "014100", "460040": "460100"}
-    SEARCH_TARGETS = ["016000", "014100", "012000", "017000", "460100", "471000", "010000"]
-    office_to_center = {}
 
     # ==========================================
     # 1. ロジック
     # ==========================================
+    office_to_center = {}
+    REDIRECT_MAP = {"014030": "014100", "460040": "460100"}
+    SEARCH_TARGETS = ["016000", "014100", "012000", "017000", "460100", "471000", "010000"]
+
     def get_weather_icon(weather_text):
         text = weather_text.lower()
         if "晴" in text: return ft.Icons.WB_SUNNY, "orange"
@@ -137,17 +122,12 @@ def main(page: ft.Page):
         found_mode = False
 
         if data is None:
-            # 404の場合の捜索ロジック
-            search_key = target_name.replace("地方", "").replace("県", "").replace("府", "").replace("都", "")
-            
-            # 1. 救済マップで探す
             if target_code in REDIRECT_MAP:
-                alt_code = REDIRECT_MAP[target_code]
-                data = fetch_json(f"https://www.jma.go.jp/bosai/forecast/data/forecast/{alt_code}.json")
+                data = fetch_json(f"https://www.jma.go.jp/bosai/forecast/data/forecast/{REDIRECT_MAP[target_code]}.json")
                 if data: found_mode = True
 
-            # 2. 広域エリアから探す
             if data is None:
+                search_key = target_name.replace("地方", "").replace("県", "").replace("府", "").replace("都", "")
                 for code in SEARCH_TARGETS:
                     if code == target_code: continue
                     temp_data = fetch_json(f"https://www.jma.go.jp/bosai/forecast/data/forecast/{code}.json")
@@ -204,8 +184,55 @@ def main(page: ft.Page):
             return "エラー", []
 
     # ==========================================
-    # 2. UI
+    # 2. UI & Map Update
     # ==========================================
+    MAP_WIDTH = 300
+    MAP_HEIGHT = 380
+    map_stack = ft.Stack(width=MAP_WIDTH, height=MAP_HEIGHT)
+
+    def init_map():
+        # 画像読み込み
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        img_filename = "日本地図.jpg"
+        img_full_path = os.path.join(script_dir, img_filename)
+
+        if os.path.exists(img_full_path):
+            img_src = img_filename
+        else:
+            img_src = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Japan_regions_map.svg/462px-Japan_regions_map.svg.png"
+
+        map_image = ft.Image(src=img_src, width=MAP_WIDTH, height=MAP_HEIGHT, fit="contain", opacity=0.9)
+        map_stack.controls.append(map_image)
+
+        # 赤ポチ作成
+        for code, pos in MAP_POSITIONS.items():
+            dot = ft.Container(
+                width=8, height=8, bgcolor="red", border_radius=4,
+                left=pos["left"], top=pos["top"],
+                visible=False, shadow=ft.BoxShadow(blur_radius=3, color="red"),
+                data=code
+            )
+            map_stack.controls.append(dot)
+
+    def update_map(selected_code):
+        target_code = None
+
+        if selected_code in MAP_POSITIONS:
+            target_code = selected_code
+        else:
+            parent = office_to_center.get(selected_code)
+            if parent and parent in MAP_POSITIONS:
+                target_code = parent
+
+        for control in map_stack.controls[1:]:
+            if control.data == target_code:
+                control.visible = True
+                control.scale = 1.5
+            else:
+                control.visible = False
+                control.scale = 1.0
+        map_stack.update()
+
     def create_card(info):
         icon, color = get_weather_icon(info['weather'])
         return ft.Container(
@@ -229,57 +256,6 @@ def main(page: ft.Page):
 
     grid_view = ft.Row(wrap=True, spacing=15, run_spacing=15, scroll=ft.ScrollMode.AUTO, expand=True)
     main_title = ft.Text("地域を選択してください", size=24, weight="bold", color="white")
-    
-    # 地図設定
-    MAP_WIDTH = 300
-    MAP_HEIGHT = 380
-    map_stack = ft.Stack(width=MAP_WIDTH, height=MAP_HEIGHT)
-
-    def init_map():
-        img_filename = "日本地図.jpg"
-        if not os.path.exists(img_filename):
-            img_src = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Japan_regions_map.svg/462px-Japan_regions_map.svg.png"
-        else:
-            img_src = img_filename
-
-        map_image = ft.Image(
-            src=img_src,
-            width=MAP_WIDTH, height=MAP_HEIGHT, 
-            fit="contain", opacity=0.9
-        )
-        
-        # クリック機能は削除し、純粋な画像表示のみに
-        map_stack.controls.append(map_image)
-
-        for code, pos in MAP_POSITIONS.items():
-            dot = ft.Container(
-                width=15, height=15, bgcolor="red", border_radius=10,
-                left=pos["left"], top=pos["top"],
-                visible=False, shadow=ft.BoxShadow(blur_radius=5, color="red"),
-                data=code
-            )
-            map_stack.controls.append(dot)
-
-    def update_map(selected_code):
-        target_code = None
-        # 1. ピンポイントのデータがあるか？
-        if selected_code in MAP_POSITIONS:
-            target_code = selected_code
-        else:
-            # 2. なければ親のデータ（地方）があるか？
-            parent_code = office_to_center.get(selected_code)
-            if parent_code in MAP_POSITIONS:
-                target_code = parent_code
-
-        # マーカー更新
-        for control in map_stack.controls[1:]:
-            if control.data == target_code:
-                control.visible = True
-                control.scale = 1.5
-            else:
-                control.visible = False
-                control.scale = 1.0
-        map_stack.update()
 
     def update_view(area_name, forecasts):
         if isinstance(forecasts, tuple): _, data_list = forecasts
@@ -296,28 +272,29 @@ def main(page: ft.Page):
     def on_sidebar_click(e):
         code = e.control.data["code"]
         name = e.control.data["name"]
-        
         main_title.value = f"{name} を読込中..."
         page.update()
-        
-        update_map(code) # 地図の赤ポチを更新
-        forecasts = get_forecast_data(code, name) # 天気データを取得
-        update_view(name, forecasts) # 画面を更新
+        update_map(code) # ここで地図更新
+        forecasts = get_forecast_data(code, name)
+        update_view(name, forecasts)
 
     # ==========================================
-    # 3. 初期化
+    # 3. 初期化処理
     # ==========================================
     init_map()
     sidebar_content = ft.Column(scroll=ft.ScrollMode.AUTO)
     sidebar_content.controls.append(ft.Container(padding=20, content=ft.Text("地域リスト", color="white", size=20, weight="bold")))
 
+    # エリアリスト取得
     try:
         area_url = "https://www.jma.go.jp/bosai/common/const/area.json"
         area_res = requests.get(area_url, timeout=5).json()
         centers = area_res['centers']
         offices = area_res['offices']
+        
         for off_code, off_info in offices.items():
-            if "parent" in off_info: office_to_center[off_code] = off_info["parent"]
+            if "parent" in off_info:
+                office_to_center[off_code] = off_info["parent"]
 
         for center_code, center_info in centers.items():
             office_buttons = []
@@ -345,28 +322,19 @@ def main(page: ft.Page):
         sidebar_content.controls.append(ft.Text("リスト取得エラー", color="red"))
 
     sidebar = ft.Container(width=260, bgcolor="#263238", content=sidebar_content)
-    
     header = ft.Container(
         height=60, bgcolor="#303F9F", 
         padding=ft.Padding(left=20, top=0, right=0, bottom=0),
         content=ft.Row([ft.Icon(ft.Icons.WB_SUNNY, color="white"), ft.Text("日本気象庁 天気予報", color="white", size=20, weight="bold")])
     )
-    
     content_area = ft.Row([
         ft.Container(content=ft.Column([main_title, ft.Divider(color="white54"), grid_view], expand=True), expand=True, padding=30),
-        
-        # 地図エリア
-        ft.Container(
-            width=340, padding=20, bgcolor="#455A64", 
-            border=ft.Border(left=ft.BorderSide(1, "white24")),
-            content=ft.Column([
-                ft.Text("現在地", color="white", weight="bold"), 
-                map_stack
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-        )
+        ft.Container(width=340, padding=20, bgcolor="#455A64", border=ft.Border(left=ft.BorderSide(1, "white24")),
+                     content=ft.Column([ft.Text("現在地", color="white", weight="bold"), map_stack], horizontal_alignment=ft.CrossAxisAlignment.CENTER))
     ], expand=True, spacing=0)
     
     main_area = ft.Container(expand=True, bgcolor="#546E7A", content=content_area)
     page.add(header, ft.Row([sidebar, main_area], expand=True, spacing=0))
 
-ft.app(target=main, assets_dir=".")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+ft.app(target=main, assets_dir=script_dir)
