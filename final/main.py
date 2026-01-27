@@ -5,7 +5,6 @@ import psycopg2
 
 class WikiScraperPostgres:
     def __init__(self):
-        print("--- Wiki Scraper (安定・深層探索モード) 起動 ---")
         self.base_url = "https://ja.wikipedia.org"
         self.headers = {"User-Agent": "Mozilla/5.0"}
         self.db_params = {
@@ -30,7 +29,7 @@ class WikiScraperPostgres:
         if not url or url in self.processed_urls: return
         self.processed_urls.add(url)
         
-        print(f"\n>>> カテゴリ探索中: {url}")
+        
         try:
             res = requests.get(url, headers=self.headers, timeout=10)
             soup = BeautifulSoup(res.text, 'html.parser')
