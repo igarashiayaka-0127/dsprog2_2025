@@ -7,7 +7,6 @@ class StationAnalyzer:
         self.df = self._load_data()
 
     def _load_data(self):
-        """DBからデータを取得し、クレンジングする内部関数"""
         conn = psycopg2.connect(**self.db_params)
         df = pd.read_sql("SELECT station_name, line_name, location FROM stations", conn)
         conn.close()
